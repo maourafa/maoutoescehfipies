@@ -245,6 +245,8 @@ function install_slowdns(){
     print_install "Memasang modul SlowDNS Server"
     wget -q -O /tmp/nameserver "${REPO}slowdns/nameserver" >/dev/null 2>&1
     chmod +x /tmp/nameserver
+    mkdir /etc/slowdns/ 
+    touch /etc/slowdns/server.pub
     bash /tmp/nameserver | tee /root/install.log
     print_success "SlowDNS"
 }
