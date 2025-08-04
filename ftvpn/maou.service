@@ -1,0 +1,11 @@
+[Unit]
+Description=Simple ftvpn - maourafa
+After=network.target
+
+[Service]
+WorkingDirectory=/root
+ExecStart=/usr/bin/python3 -m /root/ftvpn
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
