@@ -383,7 +383,7 @@ port 587
 auth on
 user rafaplayerfreefire@gmail.com
 from rafaplayerfreefire@gmail.com
-password kopikapalapi1#
+password kontol
 logfile ~/.msmtp.log
 EOF
 
