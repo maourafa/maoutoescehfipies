@@ -73,6 +73,7 @@ function is_root() {
 ### Change Environment System
 function first_setup(){
     timedatectl set-timezone Asia/Jakarta
+    mkdir /var/www/html/database/
     wget -O /etc/banner ${REPO}config/banner >/dev/null 2>&1
     chmod +x /etc/banner
     wget -O /etc/ssh/sshd_config ${REPO}config/sshd_config >/dev/null 2>&1
@@ -356,7 +357,7 @@ function tambahan(){
     chmod +x /tmp/bbr.sh && bash /tmp/bbr.sh
 
     # > Buat swap sebesar 1G
-    dd if=/dev/zero of=/swapfile bs=1024 count=5242880
+    dd if=/dev/zero of=/swapfile bs=1024 count=1024
     mkswap /swapfile
     chown root:root /swapfile
     chmod 0600 /swapfile >/dev/null 2>&1

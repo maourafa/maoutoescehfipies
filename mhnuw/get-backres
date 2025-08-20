@@ -1,0 +1,217 @@
+#!/bin/bash
+
+# === CONFIGURATION ===
+BACKUP_DIR="/root/backup"
+BACKUP_FILE="/root/backup.zip"
+XRAY_DIR="/etc/xray"
+WEB_DIR="/var/www/html"
+LIB_DIR="/var/lib/kyt"
+SBIN_DIR="/sbin"
+
+PROTOKOL_DIRS=(/etc/vless /etc/vmess /etc/trojan /etc/ssh /etc/slowdns /etc/shadowsocks)
+
+# === SYSTEM INFO ===
+ip=$(curl -s ipv4.icanhazip.com)
+domain=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+date=$(date +'%d/%m/%Y')
+time=$(date +'%H:%M:%S')
+user=$(cat /etc/hostname)
+
+# === TELEGRAM CONFIG ===
+BOT_CONFIG="/etc/bot/.bot.db"
+if [ -f "$BOT_CONFIG" ]; then
+    BOT_TOKEN=$(grep -E "^#bot# " "$BOT_CONFIG" | cut -d ' ' -f 2)
+    CHAT_ID=$(grep -E "^#bot# " "$BOT_CONFIG" | cut -d ' ' -f 3)
+    TELEGRAM_API="https://api.telegram.org/bot${BOT_TOKEN}"
+else
+    BOT_TOKEN=""
+    CHAT_ID=""
+fi
+
+# === COLORS ===
+RED='\e[31m'
+GREEN='\e[32m'
+YELLOW='\e[33m'
+NC='\e[0m'
+
+# === SEND TELEGRAM MESSAGE ===
+send_telegram() {
+    [ -z "$BOT_TOKEN" ] && return
+    [ -z "$CHAT_ID" ] && return
+    curl -s -X POST "$TELEGRAM_API/sendMessage" \
+        -d chat_id="$CHAT_ID" \
+        -d text="$1" \
+        -d parse_mode="HTML" >/dev/null
+}
+
+send_telegram_file() {
+    local file="$1"
+    local caption="$2"
+
+    if [[ ! -f "$file" ]]; then
+        echo -e "${RED}[ERROR] File tidak ditemukan: $file${NC}"
+        return 1
+    fi
+    if [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]]; then
+        echo -e "${RED}[ERROR] Bot token atau Chat ID kosong.${NC}"
+        return 1
+    fi
+
+    response=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+        -F chat_id="$CHAT_ID" \
+        -F document=@"$file" \
+        -F caption="$caption" \
+        -F parse_mode="HTML")
+
+    if echo "$response" | grep -q '"ok":true'; then
+        echo -e "${GREEN}[INFO] File berhasil dikirim ke Telegram.${NC}"
+    else
+        echo -e "${RED}[ERROR] Gagal kirim file ke Telegram.${NC}"
+        echo -e "${RED}[DEBUG] Response: $response${NC}"
+    fi
+}
+
+# === BACKUP FUNCTION ===
+create_backup() {
+    echo -e "${YELLOW}[INFO] Creating backup...${NC}"
+    rm -rf "$BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR/etc-protokol" "$BACKUP_DIR/sbin"
+
+    cp -r "$XRAY_DIR" "$BACKUP_DIR/xray" 2>/dev/null
+    cp -r "$LIB_DIR" "$BACKUP_DIR/kyt" 2>/dev/null
+    cp -r "$WEB_DIR" "$BACKUP_DIR/html" 2>/dev/null
+
+    for dir in "${PROTOKOL_DIRS[@]}"; do
+        proto=$(basename "$dir")
+        mkdir -p "$BACKUP_DIR/etc-protokol/$proto"
+        find "$dir" -maxdepth 1 -type f -name ".*.db" -exec cp {} "$BACKUP_DIR/etc-protokol/$proto/" \; 2>/dev/null
+    done
+
+    cp /etc/{passwd,group,shadow,gshadow,issue.net} "$BACKUP_DIR/" 2>/dev/null
+
+    for bin in $(ls $SBIN_DIR | grep -E "(add-|cek-|del-|renew-|triall-|user-|bot|geovpn|run|trojan|xp|utility|kvmswap|seres|usage-|shadowsocks|ssh|vless|vmess)"); do
+        cp "$SBIN_DIR/$bin" "$BACKUP_DIR/sbin/" 2>/dev/null
+    done
+
+    cd "$BACKUP_DIR" && zip -r "$BACKUP_FILE" . >/dev/null
+
+    echo -e "${GREEN}[INFO] Backup saved to $BACKUP_FILE${NC}"
+    send_telegram_file "$BACKUP_FILE" "📦 <b>Backup VPS</b>
+👤 User: <code>$user</code>
+🌍 Domain: <code>$domain</code>
+🌐 IP: <code>$ip</code>
+🗓️ Tanggal: <code>$date</code>
+🕐 Jam: <code>$time</code>
+📁 Ukuran: <code>$(du -sh /root/backup.zip | cut -f1)</code>"
+}
+
+# === RESTORE FUNCTION ===
+restore_backup() {
+    echo -e "\e[1;36m==============================\e[0m"
+    echo -e "\e[1;33m🔁 MEMULAI PROSES RESTORE...\e[0m"
+    echo -e "\e[1;36m==============================\e[0m"
+
+    BACKUP_DIR="/root/backup"
+    BACKUP_ZIP="/root/backup.zip"
+
+    if [[ ! -d "$BACKUP_DIR" ]]; then
+        if [[ -f "$BACKUP_ZIP" ]]; then
+            echo -e "\e[1;34m📦 Folder backup tidak ditemukan. Mendeteksi backup.zip..."
+            echo -e "\e[1;34m🗜️ Mengekstrak backup.zip ke /root/backup ..."
+            mkdir -p "$BACKUP_DIR"
+            unzip -o "$BACKUP_ZIP" -d "$BACKUP_DIR"
+            echo -e "\e[1;32m✅ Ekstrak selesai.\e[0m"
+        else
+            echo -e "\e[1;31m❌ Tidak ditemukan folder backup dan file backup.zip di /root.\e[0m"
+            echo -e "Silakan letakkan file backup.zip di /root dan jalankan kembali."
+            return 1
+        fi
+    fi
+
+    echo -e "\n🗂️  Menyalin file konfigurasi penting..."
+    cp -f "$BACKUP_DIR/passwd" /etc/passwd
+    cp -f "$BACKUP_DIR/group" /etc/group
+    cp -f "$BACKUP_DIR/shadow" /etc/shadow
+    cp -f "$BACKUP_DIR/gshadow" /etc/gshadow
+    cp -f "$BACKUP_DIR/issue.net" /etc/issue.net
+
+    echo -e "\n🌐 Restore domain, xray config, dan sertifikat..."
+    cp -rf "$BACKUP_DIR/xray" /etc/
+    cp -rf "$BACKUP_DIR/html" /var/www/
+
+    echo -e "\n📂 Restore file database protokol..."
+    mkdir -p /etc/{ssh,vless,vmess,trojan,slowdns,shadowsocks}
+    rm -f /etc/ssh/.ssh.db
+    rm -f /etc/vless/.vless.db
+    rm -f /etc/vmess/.vmess.db
+    rm -f /etc/trojan/.trojan.db
+    rm -f /etc/slowdns/.slowdns.db
+    rm -f /etc/shadowsocks/.shadowsocks.db
+
+    cp "$BACKUP_DIR/etc-protokol/ssh/.ssh.db"                  /etc/ssh/
+    cp "$BACKUP_DIR/etc-protokol/vless/.vless.db"              /etc/vless/
+    cp "$BACKUP_DIR/etc-protokol/vmess/.vmess.db"              /etc/vmess/
+    cp "$BACKUP_DIR/etc-protokol/trojan/.trojan.db"            /etc/trojan/
+    cp "$BACKUP_DIR/etc-protokol/slowdns/.slowdns.db"          /etc/slowdns/
+    cp "$BACKUP_DIR/etc-protokol/shadowsocks/.shadowsocks.db" /etc/shadowsocks/
+
+    echo -e "\n✅ \e[1;32mRestore selesai! Silakan restart layanan jika diperlukan.\e[0m"
+    echo -e "\e[1;36m==============================\e[0m"
+}
+
+# === AUTO BACKUP SETUP ===
+setup_autobackup() {
+    echo -e "${GREEN}Choose auto-backup schedule:${NC}"
+    echo "1) Every 12 hours"
+    echo "2) Daily at 00:00"
+    echo "3) Every 3 days"
+    echo "4) Weekly"
+    echo "5) Monthly"
+    echo "6) Custom hour (0-6 only)"
+    read -rp "Choose [1-6]: " choice
+    case $choice in
+        1) cron="0 */12 * * *" ;;
+        2) cron="0 0 * * *" ;;
+        3) cron="0 0 */3 * *" ;;
+        4) cron="0 0 */7 * *" ;;
+        5) cron="0 0 1 * *" ;;
+        6)
+            read -rp "Enter hour (0-6): " hour
+            [[ "$hour" =~ ^[0-6]$ ]] || { echo -e "${RED}Invalid hour${NC}"; return; }
+            cron="0 $hour * * *"
+            ;;
+        *) echo -e "${RED}Invalid choice${NC}"; return ;;
+    esac
+
+    sed -i '/#autobackup-maou/d' /etc/crontab
+    echo "$cron root /bin/bash $0 autobackup #autobackup-maou" >> /etc/crontab
+    echo -e "${GREEN}Auto-backup scheduled.${NC}"
+}
+
+# === MENU ===
+show_menu() {
+    clear
+    echo -e "\033[1;36m╔══════════════════════════════════════════════════════════╗"
+    echo -e "\033[1;36m║ \e[1;33m         VPS BACKUP & RESTORE SYSTEM                \033[1;36m║"
+    echo -e "\033[1;36m╚══════════════════════════════════════════════════════════╝"
+    echo -e "\033[0;32m1) Backup Data"
+    echo -e "2) Restore Data"
+    echo -e "3) Set Auto Backup"
+    echo -e "0) Exit${NC}"
+    read -rp "Select option [0-3]: " opt
+    case $opt in
+        1) create_backup ;;
+        2) restore_backup ;;
+        3) setup_autobackup ;;
+        0) exit 0 ;;
+        *) echo "Invalid option"; sleep 2 ;;
+    esac
+}
+
+# === MAIN ===
+case "$1" in
+    backup) create_backup ;;
+    restore) restore_backup ;;
+    autobackup) create_backup ;;
+    *) while true; do show_menu; done ;;
+esac
