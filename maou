@@ -41,7 +41,7 @@ send_telegram_message() {
 }
 # Header
 echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-echo -e " \e[1;97;101m            ADD VLESS ACCOUNT           \e[0m"
+echo -e " \e[1;97;101m            ADD VLESS MAOUVPN           \e[0m"
 echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
 
 # Input user
@@ -138,7 +138,7 @@ vlesslink2="vless://${uuid}@${domain}:80?path=/vless&encryption=none&host=${doma
 vlesslink3="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless-grpc&sni=${domain}#${user}"
 
 # Buat file konfigurasi
-cat >/var/www/html/database/vless-$user.txt <<-END
+cat >/var/www/html/vless-$user.txt <<-END
 _________________________________________________________
 *_DETAIL PEMBELIAN_*
 _________________________________________________________
